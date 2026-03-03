@@ -22,32 +22,29 @@ def root():
 @app.post("/v1/natal")
 def natal(x: NatalIn):
     try:
-        # ✅ 兼容不同 kerykeion 版本：优先 AstrologicalSubject，其次尝试工厂
+        # 1) 兼容导入：优先 AstrologicalSubject
         AstrologicalSubject = None
         AstrologicalSubjectFactory = None
 
         try:
-            # 常见版本：直接有 AstrologicalSubject
             from kerykeion import AstrologicalSubject  # type: ignore
             AstrologicalSubject = AstrologicalSubject
         except Exception:
             pass
 
         try:
-            # 你原先用的工厂（部分版本才有）
             from kerykeion import AstrologicalSubjectFactory  # type: ignore
             AstrologicalSubjectFactory = AstrologicalSubjectFactory
         except Exception:
             pass
 
         if AstrologicalSubject is None and AstrologicalSubjectFactory is None:
-            raise RuntimeError("kerykeion API mismatch: cannot import AstrologicalSubject or AstrologicalSubjectFactory")
+            raise RuntimeError(
+                "kerykeion API mismatch: cannot import AstrologicalSubject/AstrologicalSubjectFactory"
+            )
 
-        # ✅ ChartDataFactory 也做延迟导入
-        from kerykeion.chart_data_factory import ChartDataFactory  # type: ignore
-
+        # 2) 创建 subject（兼容参数名差异）
         if AstrologicalSubject is not None:
-            # ✅ 尝试以最常见构造方式创建（不同版本参数名可能不同）
             try:
                 subject = AstrologicalSubject(
                     name=x.name,
@@ -62,7 +59,6 @@ def natal(x: NatalIn):
                     online=False,
                 )
             except TypeError:
-                # 有的版本字段名是 lon/lat 或 timezone
                 subject = AstrologicalSubject(
                     name=x.name,
                     year=x.year,
@@ -70,12 +66,13 @@ def natal(x: NatalIn):
                     day=x.day,
                     hour=x.hour,
                     minute=x.minute,
-                    lon=x.lng,
+                    lon=x.lng,   # 某些版本用 lon
                     lat=x.lat,
                     tz_str=x.tz_str,
                     online=False,
                 )
         else:
+            # 工厂方式（如果存在）
             subject = AstrologicalSubjectFactory.from_birth_data(
                 name=x.name,
                 year=x.year,
@@ -89,21 +86,37 @@ def natal(x: NatalIn):
                 online=False,
             )
 
-        chart_data = ChartDataFactory.create_natal_chart_data(subject)
+        # 3) 不同版本的 kerykeion 导出方法不一样，做探测：
+        #    常见：.json(), .model_dump(), .dict(), .to_dict(), __dict__
+        if hasattr(subject, "json"):
+            try:
+                return {"subject": subject.json()}
+            except Exception:
+                pass
 
-        def safe_dump(obj):
-            if hasattr(obj, "model_dump"):
-                return obj.model_dump()
-            if hasattr(obj, "dict"):
-                return obj.dict()
-            if hasattr(obj, "__dict__"):
-                return obj.__dict__
-            return str(obj)
+        if hasattr(subject, "model_dump"):
+            try:
+                return {"subject": subject.model_dump()}
+            except Exception:
+                pass
 
-        return {
-            "subject": safe_dump(subject),
-            "chart_data": safe_dump(chart_data),
-        }
+        if hasattr(subject, "dict"):
+            try:
+                return {"subject": subject.dict()}
+            except Exception:
+                pass
+
+        if hasattr(subject, "to_dict"):
+            try:
+                return {"subject": subject.to_dict()}
+            except Exception:
+                pass
+
+        # 最后兜底：返回 __dict__（大多数对象都有）
+        if hasattr(subject, "__dict__"):
+            return {"subject": subject.__dict__}
+
+        return {"subject": str(subject)}
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
