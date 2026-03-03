@@ -20,4 +20,4 @@ COPY . .
 ENV PORT=8080
 
 # 🔥 关键：使用 exec 形式 + workers=1
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
+CMD exec uvicorn app:app --host 0.0.0.0 --port $PORT --workers 1
