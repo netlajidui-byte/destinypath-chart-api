@@ -88,9 +88,41 @@ def natal(x: NatalIn):
 
         # 3) 不同版本的 kerykeion 导出方法不一样，做探测：
         #    常见：.json(), .model_dump(), .dict(), .to_dict(), __dict__
-        if hasattr(subject, "json"):
-            try:
-                return {"subject": subject.json()}
+        import json
+
+# 优先 json()
+if hasattr(subject, "json"):
+    try:
+        return {"subject": json.loads(subject.json())}
+    except Exception:
+        pass
+
+# Pydantic v2
+if hasattr(subject, "model_dump"):
+    try:
+        return {"subject": subject.model_dump()}
+    except Exception:
+        pass
+
+# Pydantic v1
+if hasattr(subject, "dict"):
+    try:
+        return {"subject": subject.dict()}
+    except Exception:
+        pass
+
+# to_dict
+if hasattr(subject, "to_dict"):
+    try:
+        return {"subject": subject.to_dict()}
+    except Exception:
+        pass
+
+# 最后兜底
+if hasattr(subject, "__dict__"):
+    return {"subject": subject.__dict__}
+
+return {"subject": str(subject)}
             except Exception:
                 pass
 
