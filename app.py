@@ -22,26 +22,75 @@ def root():
 @app.post("/v1/natal")
 def natal(x: NatalIn):
     try:
-        # ✅ 关键：延迟导入，避免容器启动阶段崩溃/超时
-        from kerykeion import AstrologicalSubjectFactory
-        from kerykeion.chart_data_factory import ChartDataFactory
+        # ✅ 兼容不同 kerykeion 版本：优先 AstrologicalSubject，其次尝试工厂
+        AstrologicalSubject = None
+        AstrologicalSubjectFactory = None
 
-        subject = AstrologicalSubjectFactory.from_birth_data(
-            name=x.name,
-            year=x.year,
-            month=x.month,
-            day=x.day,
-            hour=x.hour,
-            minute=x.minute,
-            lng=x.lng,
-            lat=x.lat,
-            tz_str=x.tz_str,
-            online=False,
-        )
+        try:
+            # 常见版本：直接有 AstrologicalSubject
+            from kerykeion import AstrologicalSubject  # type: ignore
+            AstrologicalSubject = AstrologicalSubject
+        except Exception:
+            pass
+
+        try:
+            # 你原先用的工厂（部分版本才有）
+            from kerykeion import AstrologicalSubjectFactory  # type: ignore
+            AstrologicalSubjectFactory = AstrologicalSubjectFactory
+        except Exception:
+            pass
+
+        if AstrologicalSubject is None and AstrologicalSubjectFactory is None:
+            raise RuntimeError("kerykeion API mismatch: cannot import AstrologicalSubject or AstrologicalSubjectFactory")
+
+        # ✅ ChartDataFactory 也做延迟导入
+        from kerykeion.chart_data_factory import ChartDataFactory  # type: ignore
+
+        if AstrologicalSubject is not None:
+            # ✅ 尝试以最常见构造方式创建（不同版本参数名可能不同）
+            try:
+                subject = AstrologicalSubject(
+                    name=x.name,
+                    year=x.year,
+                    month=x.month,
+                    day=x.day,
+                    hour=x.hour,
+                    minute=x.minute,
+                    lng=x.lng,
+                    lat=x.lat,
+                    tz_str=x.tz_str,
+                    online=False,
+                )
+            except TypeError:
+                # 有的版本字段名是 lon/lat 或 timezone
+                subject = AstrologicalSubject(
+                    name=x.name,
+                    year=x.year,
+                    month=x.month,
+                    day=x.day,
+                    hour=x.hour,
+                    minute=x.minute,
+                    lon=x.lng,
+                    lat=x.lat,
+                    tz_str=x.tz_str,
+                    online=False,
+                )
+        else:
+            subject = AstrologicalSubjectFactory.from_birth_data(
+                name=x.name,
+                year=x.year,
+                month=x.month,
+                day=x.day,
+                hour=x.hour,
+                minute=x.minute,
+                lng=x.lng,
+                lat=x.lat,
+                tz_str=x.tz_str,
+                online=False,
+            )
 
         chart_data = ChartDataFactory.create_natal_chart_data(subject)
 
-        # ✅ 兼容：不同版本对象可能没有 model_dump
         def safe_dump(obj):
             if hasattr(obj, "model_dump"):
                 return obj.model_dump()
